@@ -1,0 +1,9 @@
+target/
+.idea/
+.vs/
+*.iml
+*.class
+*.log
+.env
+.env.local
+!.env.example
