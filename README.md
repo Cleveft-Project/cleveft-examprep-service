@@ -9,11 +9,12 @@ performs on it to work out what they still need to revise.
 
 <br/>
 
-![Java](https://img.shields.io/badge/Java-21-orange?style=flat-square&logo=openjdk&logoColor=white)
-![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.3.5-6DB33F?style=flat-square&logo=springboot&logoColor=white)
-![PostgreSQL](https://img.shields.io/badge/PostgreSQL-exam__prep-4169E1?style=flat-square&logo=postgresql&logoColor=white)
-![Gemini](https://img.shields.io/badge/Gemini-quiz%20generation-8E75B2?style=flat-square&logo=googlegemini&logoColor=white)
-![Port](https://img.shields.io/badge/port-8085-005571?style=flat-square)
+![Java](https://img.shields.io/badge/Java-21-ED8B00?style=flat-square&logo=openjdk&logoColor=white)
+![Spring Boot](https://img.shields.io/badge/Spring_Boot-3.3.5-6DB33F?style=flat-square&logo=springboot&logoColor=white)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-4169E1?style=flat-square&logo=postgresql&logoColor=white)
+![Google Gemini](https://img.shields.io/badge/Google_Gemini-3.5_Flash-8E75B2?style=flat-square&logo=googlegemini&logoColor=white)
+![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?style=flat-square&logo=docker&logoColor=white)
+![Port](https://img.shields.io/badge/Port-8085-6C757D?style=flat-square)
 
 </div>
 
@@ -129,5 +130,5 @@ cd ../cleveft-examprep-service && mvn spring-boot:run
 ---
 
 <div align="center">
-<sub>Part of the <a href="https://github.com/Cleveft-Project">Cleveft</a> platform · CodeQuest 2026</sub>
+<sub>Part of the <a href="https://github.com/Cleveft-Project">Cleveft</a> platform</sub>
 </div>
