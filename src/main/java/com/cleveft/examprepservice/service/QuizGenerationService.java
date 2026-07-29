@@ -10,7 +10,9 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -35,6 +37,7 @@ public class QuizGenerationService {
 
             {
               "title": "...",
+              "topics": ["...", "...", "..."],
               "questions": [
                 {
                   "prompt": "...",
@@ -46,7 +49,19 @@ public class QuizGenerationService {
               ]
             }
 
+            Work in two steps. First read the transcript and list its topics. Then write the
+            questions, tagging each with one of the topics you listed.
+
             Rules:
+            - "topics" is 3 to 6 concepts the lecturer actually taught, named as a student
+              would name them when saying what to revise. Lowercase, 1-4 words each.
+              Good: "bjt biasing", "tcp handshake", "gauss's law", "vector embeddings".
+              Bad: "future planning", "process outcome", "key concepts", "understanding",
+              "applications", "chapter 2" — these name nothing and cannot be revised from.
+              If the transcript is too thin for three real concepts, return fewer. Never pad
+              the list with generic categories.
+            - "topicTag" must be copied verbatim from "topics". Never invent one that is not
+              in that list.
             - Every question must be answerable from the transcript alone. Never test material
               the lecturer did not cover.
             - Exactly 4 options per question. Exactly one is correct.
@@ -55,14 +70,6 @@ public class QuizGenerationService {
               write obviously silly options, and do not make the correct answer the longest one.
             - Vary the correct position across the quiz; do not favour any one index.
             - "explanation" says why the answer is right, referring to what the lecturer said.
-            - "topicTag" must name a specific concept, technique, term or process the lecturer
-              actually taught — the words a student would use when saying what they need to
-              revise. 1-4 words, lowercase, reused verbatim across questions on the same concept.
-              Good: "bjt biasing", "tcp handshake", "gauss's law", "binary search tree".
-              Bad: "future planning", "process outcome", "key concepts", "understanding",
-              "applications", "chapter 2" — these describe nothing and are useless to revise from.
-              If a question does not test a nameable concept, do not invent a category for it;
-              use the closest real concept in the transcript instead.
             - Test understanding and application, not trivia or exact wording recall.
             """;
 
@@ -107,14 +114,38 @@ public class QuizGenerationService {
         return parse(result, lecture.title(), questionCount);
     }
 
+    /**
+     * Tags that name nothing.
+     *
+     * <p>Kept as a backstop rather than as the main defence. Asking the model
+     * for a topic list first and requiring every tag to come from it is what
+     * actually fixes this; a blocklist only catches the cases where it ignores
+     * that too. Matching is on the whole tag, not a substring — "process
+     * scheduling" is a real concept and must survive.
+     */
+    private static final Set<String> USELESS_TAGS = Set.of(
+            "future planning", "process outcome", "key concepts", "understanding",
+            "applications", "general", "overview", "introduction", "concepts",
+            "summary", "miscellaneous", "other", "topics", "content");
+
     private GeneratedQuiz parse(JsonNode root, String lectureTitle, int expectedCount) {
         String title = root.path("title").asText(lectureTitle + " — practice quiz");
+
+        // The topic list the model committed to before writing questions.
+        // Everything a question claims has to appear here.
+        Set<String> declared = new LinkedHashSet<>();
+        for (JsonNode topic : root.path("topics")) {
+            String value = normaliseTag(topic.asText("").trim());
+            if (!value.isEmpty() && !USELESS_TAGS.contains(value)) {
+                declared.add(value);
+            }
+        }
 
         List<QuizQuestion> questions = new ArrayList<>();
         for (JsonNode node : root.path("questions")) {
             QuizQuestion question = parseQuestion(node);
             if (question != null) {
-                questions.add(question);
+                questions.add(withCheckedTag(question, declared));
             }
         }
 
@@ -128,6 +159,37 @@ public class QuizGenerationService {
         }
 
         return new GeneratedQuiz(title, questions);
+    }
+
+    /**
+     * Holds a question's tag to the list the model declared.
+     *
+     * <p>A tag outside that list, or one on the useless list, is dropped rather
+     * than kept — a null tag simply means this question contributes no mastery
+     * data, which is a small loss. Keeping it would put a meaningless label in
+     * front of the student on the readiness screen and, worse, persist it as a
+     * topic they appear to be weak at forever.
+     */
+    private QuizQuestion withCheckedTag(QuizQuestion question, Set<String> declared) {
+        String tag = question.topicTag();
+
+        if (tag != null && !tag.isBlank() && !USELESS_TAGS.contains(tag)
+                && (declared.isEmpty() || declared.contains(tag))) {
+            return question;
+        }
+
+        if (tag != null && !tag.isBlank()) {
+            log.info("Dropping topic tag '{}' — not one of the {} declared topics", tag, declared.size());
+        }
+
+        return new QuizQuestion(
+                question.id(),
+                question.prompt(),
+                question.options(),
+                question.correctIndex(),
+                question.explanation(),
+                null,
+                question.lectureId());
     }
 
     /**
