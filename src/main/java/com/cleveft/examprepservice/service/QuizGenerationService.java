@@ -55,8 +55,14 @@ public class QuizGenerationService {
               write obviously silly options, and do not make the correct answer the longest one.
             - Vary the correct position across the quiz; do not favour any one index.
             - "explanation" says why the answer is right, referring to what the lecturer said.
-            - "topicTag" is a short lowercase subject tag, 1-4 words, reused consistently
-              across questions about the same subject.
+            - "topicTag" must name a specific concept, technique, term or process the lecturer
+              actually taught — the words a student would use when saying what they need to
+              revise. 1-4 words, lowercase, reused verbatim across questions on the same concept.
+              Good: "bjt biasing", "tcp handshake", "gauss's law", "binary search tree".
+              Bad: "future planning", "process outcome", "key concepts", "understanding",
+              "applications", "chapter 2" — these describe nothing and are useless to revise from.
+              If a question does not test a nameable concept, do not invent a category for it;
+              use the closest real concept in the transcript instead.
             - Test understanding and application, not trivia or exact wording recall.
             """;
 
