@@ -31,6 +31,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Service
 public class ExamPrepService {
@@ -41,6 +42,12 @@ public class ExamPrepService {
     private static final double WEAK_THRESHOLD = 0.6;
     /** At or above this a topic counts as mastered. */
     private static final double STRONG_THRESHOLD = 0.8;
+
+    /**
+     * How many questions a topic needs before one clean sweep counts as
+     * understanding it. See where it is used in {@link #submitAttempt}.
+     */
+    private static final int UNDERSTOOD_MIN_QUESTIONS = 2;
 
     private final QuizRepository quizRepository;
     private final QuizAttemptRepository attemptRepository;
@@ -303,22 +310,48 @@ public class ExamPrepService {
 
         updateTopicMastery(userId, graded);
 
-        List<String> weakTopics = graded.stream()
-                .filter(answer -> !answer.correct())
-                .map(GradedAnswer::topicTag)
-                .filter(tag -> tag != null && !tag.isBlank())
-                .distinct()
+        // Group by topic first, then judge the topic rather than the answer.
+        //
+        // Scoring per answer would let a topic appear in both lists at once —
+        // three questions on it, two right and one wrong — which tells the
+        // student nothing. A topic is weak if any question on it was missed and
+        // strong only if every one was answered correctly.
+        Map<String, List<GradedAnswer>> byTopic = graded.stream()
+                .filter(answer -> answer.topicTag() != null && !answer.topicTag().isBlank())
+                .collect(Collectors.groupingBy(
+                        GradedAnswer::topicTag, LinkedHashMap::new, Collectors.toList()));
+
+        List<String> weakTopics = byTopic.entrySet().stream()
+                .filter(entry -> entry.getValue().stream().anyMatch(answer -> !answer.correct()))
+                .map(Map.Entry::getKey)
+                .toList();
+
+        // Understanding needs repetition behind it.
+        //
+        // One correct answer on a topic is as likely to be a lucky guess as
+        // knowledge, and telling a student they understand something on that
+        // evidence is worse than telling them nothing. Two or more questions
+        // all answered correctly is a claim worth making — and it is the claim
+        // that makes this different from the right/wrong list every quiz app
+        // already shows.
+        //
+        // Deliberately asymmetric with weakness: a single miss is still worth
+        // flagging, because a gap is evidence even once.
+        List<String> strongTopics = byTopic.entrySet().stream()
+                .filter(entry -> entry.getValue().size() >= UNDERSTOOD_MIN_QUESTIONS)
+                .filter(entry -> entry.getValue().stream().allMatch(GradedAnswer::correct))
+                .map(Map.Entry::getKey)
                 .toList();
 
         log.info("User {} scored {}/{} on quiz {}", userId, score, quiz.getQuestions().size(), quizId);
 
-        return AttemptResultResponse.from(attempt, weakTopics);
+        return AttemptResultResponse.from(attempt, weakTopics, strongTopics);
     }
 
     @Transactional(readOnly = true)
     public List<AttemptResultResponse> listAttempts(UUID userId) {
         return attemptRepository.findByUserIdOrderByCompletedAtDesc(userId).stream()
-                .map(attempt -> AttemptResultResponse.from(attempt, List.of()))
+                .map(attempt -> AttemptResultResponse.from(attempt, List.of(), List.of()))
                 .toList();
     }
 
