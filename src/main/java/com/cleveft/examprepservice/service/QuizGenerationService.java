@@ -64,6 +64,14 @@ public class QuizGenerationService {
               in that list.
             - Every question must be answerable from the transcript alone. Never test material
               the lecturer did not cover.
+            - Question only what was TAUGHT. The lecture title, course code, date, speaker
+              labels and any other metadata are context for you, never material to be tested.
+              Never write a question whose answer is the title, the course code, the date, how
+              long the lecture was, or anything about the transcript as a document. A student
+              revising for an exam gains nothing from recalling a filename.
+            - Better to write fewer questions than to pad. If the transcript only supports six
+              real questions, write six. Reaching a requested count by asking about metadata or
+              trivia produces a quiz that measures nothing, which is worse than a short one.
             - Exactly 4 options per question. Exactly one is correct.
             - "correctIndex" is the 0-based position of the correct option.
             - Distractors must be plausible to someone who half-understands the topic. Do not
@@ -91,15 +99,32 @@ public class QuizGenerationService {
             transcript = transcript.substring(0, MAX_TRANSCRIPT_CHARS);
         }
 
+        /*
+         * Metadata is fenced off from the transcript, and labelled as
+         * off-limits where the model reads it.
+         *
+         * Previously the title and course code sat immediately above the
+         * transcript with nothing distinguishing them, so the model treated
+         * them as material and produced questions like "what date was this
+         * lecture delivered" and "what course is this". Both were technically
+         * answerable from what it had been given, and both were worthless to a
+         * student revising.
+         */
         StringBuilder prompt = new StringBuilder()
+                .append("=== CONTEXT (never quiz on any of this) ===\n")
                 .append("Lecture title: ").append(lecture.title()).append('\n');
 
         if (lecture.courseCode() != null) {
             prompt.append("Course: ").append(lecture.courseCode()).append('\n');
         }
 
-        prompt.append("Write exactly ").append(questionCount)
-                .append(" questions at ").append(difficulty).append(" difficulty.\n");
+        prompt.append("=== END CONTEXT ===\n\n");
+
+        // "Up to", not "exactly". A hard count is what drove it to pad with
+        // metadata trivia once the real material ran out.
+        prompt.append("Write up to ").append(questionCount)
+                .append(" questions at ").append(difficulty)
+                .append(" difficulty — fewer if the transcript does not support that many.\n");
 
         if (focusTopics != null && !focusTopics.isEmpty()) {
             prompt.append("Weight the questions toward these topics, which this student is ")
@@ -108,7 +133,9 @@ public class QuizGenerationService {
                     .append(".\n");
         }
 
-        prompt.append("\nTranscript:\n").append(transcript);
+        prompt.append("\n=== TRANSCRIPT (the only material to quiz on) ===\n")
+                .append(transcript)
+                .append("\n=== END TRANSCRIPT ===");
 
         JsonNode result = client.generateJson(INSTRUCTION, prompt.toString());
         return parse(result, lecture.title(), questionCount);
