@@ -94,12 +94,19 @@ public class TranscriptionClient {
             String title,
             String courseCode,
             String status,
+            /** RECORDING, PDF or YOUTUBE. */
+            String source,
             String fullTranscript,
             List<Map<String, Object>> structuredNotes,
             List<Map<String, Object>> keyConcepts
     ) {
         public boolean isReady() {
             return "COMPLETED".equals(status) && fullTranscript != null && !fullTranscript.isBlank();
+        }
+
+        /** @see LectureSummary#isExaminable() */
+        public boolean isExaminable() {
+            return !"YOUTUBE".equals(source);
         }
     }
 
@@ -109,10 +116,28 @@ public class TranscriptionClient {
             String title,
             String courseCode,
             String status,
+            /** RECORDING, PDF or YOUTUBE. */
+            String source,
             /** Key-concept terms — display only. */
             List<String> topics,
             /** Canonical tags, shared vocabulary with topic_analytics. */
             List<String> topicTags
     ) {
+
+        /**
+         * Whether this is material the student will actually be examined on.
+         *
+         * <p>A recording is the lecturer speaking and a PDF is what they handed
+         * out; both decide what turns up on the paper. A video the student found
+         * to make sense of a topic does not — it is there to help them
+         * understand, and letting it raise an exam readiness score would mean
+         * the meter could climb without the lecturer having said a word.
+         *
+         * <p>Null is treated as examinable, so a lecture stored before the
+         * column existed keeps counting exactly as it did.
+         */
+        public boolean isExaminable() {
+            return !"YOUTUBE".equals(source);
+        }
     }
 }

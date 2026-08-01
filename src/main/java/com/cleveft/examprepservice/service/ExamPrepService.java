@@ -148,6 +148,11 @@ public class ExamPrepService {
                 transcriptionClient.listLectures(userId).stream()
                         .filter(lecture -> courseKey.equals(CourseCodes.normalise(lecture.courseCode())))
                         .filter(lecture -> "COMPLETED".equals(lecture.status()))
+                        // A course quiz is the closest thing Cleveft offers to a
+                        // mock exam, so it is drawn from what the lecturer
+                        // actually taught. Videos can still be practised
+                        // against one at a time.
+                        .filter(TranscriptionClient.LectureSummary::isExaminable)
                         .toList();
 
         if (inCourse.isEmpty()) {
@@ -308,7 +313,25 @@ public class ExamPrepService {
                 score,
                 quiz.getQuestions().size()));
 
-        updateTopicMastery(userId, graded);
+        /*
+         * Practice on supporting material is not recorded as mastery.
+         *
+         * Mastery is what readiness is computed from, and readiness answers "am
+         * I ready for the exam?" — a question only the lecturer's material can
+         * answer. So a quiz taken against an imported video shows its score and
+         * its topic breakdown exactly like any other, and changes nothing
+         * behind the scenes.
+         *
+         * Deliberately symmetric. An earlier design let a video flag a topic as
+         * weak while never crediting it as understood, on the grounds that
+         * getting something wrong is evidence wherever it happens. True, but it
+         * meant practice could quietly lower a readiness score it could never
+         * raise — a meter that only moves one way is worse than one that plainly
+         * says what it counts.
+         */
+        if (isExaminable(userId, quiz.getLectureId())) {
+            updateTopicMastery(userId, graded);
+        }
 
         // Group by topic first, then judge the topic rather than the answer.
         //
@@ -363,6 +386,28 @@ public class ExamPrepService {
      * lecture 2 credited lecture 1 and left lecture 2 looking untouched — and
      * two courses using the same topic name moved each other's readiness.
      */
+    /**
+     * Whether a quiz's source counts towards the exam.
+     *
+     * <p>A course quiz has no lecture of its own, and is already generated from
+     * examinable material only — so a null id is examinable by construction.
+     *
+     * <p>Fails open: if the transcription service cannot be reached, the attempt
+     * is recorded as it always was. Silently discarding a student's quiz result
+     * because another service was briefly down is the worse failure.
+     */
+    private boolean isExaminable(UUID userId, UUID lectureId) {
+        if (lectureId == null) {
+            return true;
+        }
+        try {
+            return transcriptionClient.getLecture(userId, lectureId).isExaminable();
+        } catch (RuntimeException e) {
+            log.warn("Could not read the source of lecture {}; recording mastery as usual", lectureId);
+            return true;
+        }
+    }
+
     private void updateTopicMastery(UUID userId, List<GradedAnswer> graded) {
         for (GradedAnswer answer : graded) {
             String topic = answer.topicTag();
@@ -464,7 +509,18 @@ public class ExamPrepService {
     private List<ReadinessResponse.CourseReadiness> readinessByCourse(
             UUID userId, List<TopicAnalytics> assessed) {
 
-        List<TranscriptionClient.LectureSummary> lectures = transcriptionClient.listLectures(userId);
+        // Supporting material is dropped before anything is counted.
+        //
+        // Readiness answers one question — "am I ready for the exam?" — and the
+        // exam comes from the lecturer. A video the student found to understand
+        // a topic belongs in search, in the chat and in practice; letting it
+        // into this calculation would let the meter climb on material no
+        // examiner has seen.
+        List<TranscriptionClient.LectureSummary> lectures =
+                transcriptionClient.listLectures(userId).stream()
+                        .filter(TranscriptionClient.LectureSummary::isExaminable)
+                        .toList();
+
         if (lectures.isEmpty()) {
             return List.of();
         }
@@ -770,7 +826,11 @@ public class ExamPrepService {
 
         Set<String> untouched = new LinkedHashSet<>();
         for (TranscriptionClient.LectureSummary lecture : transcriptionClient.listLectures(userId)) {
-            if (lecture.topicTags() == null) {
+            // A blind spot is something you will be examined on and have not
+            // revisited. A video you imported and never quizzed is not that —
+            // flagging it would tell a student they have a gap in material their
+            // lecturer never set.
+            if (lecture.topicTags() == null || !lecture.isExaminable()) {
                 continue;
             }
             for (String tag : lecture.topicTags()) {
