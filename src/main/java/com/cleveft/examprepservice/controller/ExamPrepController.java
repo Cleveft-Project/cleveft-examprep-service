@@ -4,6 +4,7 @@ import com.cleveft.examprepservice.dto.AttemptResultResponse;
 import com.cleveft.examprepservice.dto.GenerateQuizRequest;
 import com.cleveft.examprepservice.dto.QuizResponse;
 import com.cleveft.examprepservice.dto.LectureReadinessResponse;
+import com.cleveft.examprepservice.dto.TopicAnswerResponse;
 import com.cleveft.examprepservice.dto.ReadinessResponse;
 import com.cleveft.examprepservice.dto.SubmitAttemptRequest;
 import com.cleveft.examprepservice.exception.ApiException;
@@ -103,6 +104,26 @@ public class ExamPrepController {
             @RequestHeader(value = "X-User-Id", required = false) String userId) {
 
         return ResponseEntity.ok(examPrepService.readiness(requireUserId(userId)));
+    }
+
+    /**
+     * The questions this student was asked on one topic, and how they answered.
+     *
+     * <p>What a mastery percentage cannot tell you. Reached by tapping a topic
+     * on the readiness card, so the number stops being a verdict and becomes a
+     * way back into the material.
+     *
+     * @param courseCode optional, so a topic opened from one course's card does
+     *                   not return answers from another that used the same tag
+     */
+    @GetMapping("/readiness/topics/{topic}/answers")
+    public ResponseEntity<List<TopicAnswerResponse>> topicAnswers(
+            @RequestHeader(value = "X-User-Id", required = false) String userId,
+            @PathVariable String topic,
+            @RequestParam(value = "courseCode", required = false) String courseCode) {
+
+        return ResponseEntity.ok(
+                examPrepService.topicAnswers(requireUserId(userId), topic, courseCode));
     }
 
     // ---- summaries ---------------------------------------------------

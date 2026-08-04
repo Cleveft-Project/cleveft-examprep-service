@@ -6,6 +6,7 @@ import com.cleveft.examprepservice.dto.AttemptResultResponse;
 import com.cleveft.examprepservice.dto.GenerateQuizRequest;
 import com.cleveft.examprepservice.dto.GradedAnswer;
 import com.cleveft.examprepservice.dto.LectureReadinessResponse;
+import com.cleveft.examprepservice.dto.TopicAnswerResponse;
 import com.cleveft.examprepservice.dto.QuizQuestion;
 import com.cleveft.examprepservice.dto.QuizResponse;
 import com.cleveft.examprepservice.dto.ReadinessResponse;
@@ -859,6 +860,117 @@ public class ExamPrepService {
         return touched.stream()
                 .anyMatch(seen -> !seen.isEmpty()
                         && (seen.equals(candidate) || seen.contains(candidate) || candidate.contains(seen)));
+    }
+
+    /**
+     * Every question this student was asked on one topic, newest first.
+     *
+     * <p>A mastery percentage says how well someone did; it cannot say what they
+     * got wrong. This can — and getting a question back in front of the student,
+     * with their own answer beside the right one, is the only part of exam prep
+     * that actually teaches anything.
+     *
+     * <p>Assembled across two tables. Attempts record the answer and the topic;
+     * quizzes hold the prompt and options. The quizzes are fetched in one batch
+     * rather than per answer, because a well-drilled student has twenty attempts
+     * and that would be twenty round trips to render one screen.
+     *
+     * @param courseCode optional filter, so opening a topic from one course's
+     *                   card does not show answers from another course that
+     *                   happened to use the same tag
+     */
+    @Transactional(readOnly = true)
+    public List<TopicAnswerResponse> topicAnswers(UUID userId, String topic, String courseCode) {
+        String wanted = normaliseTag(topic);
+        if (wanted.isEmpty()) {
+            return List.of();
+        }
+
+        String courseKey = courseCode == null ? null : CourseCodes.normalise(courseCode);
+
+        /*
+         * Which course an answer belongs to is a property of its lecture.
+         *
+         * A quiz taken on a single lecture carries no course code — the attempt
+         * stores quiz.getCourseCode(), which is null there. Filtering on that
+         * strictly showed nothing; ignoring it when absent showed everything,
+         * including another course's questions. Neither is right, because the
+         * attempt is simply the wrong place to ask.
+         *
+         * The lecture knows. Every answer records the lecture it came from, so
+         * resolving lecture to course gives the true answer for both kinds of
+         * quiz — including a course-wide quiz, where individual questions come
+         * from different lectures.
+         */
+        Map<UUID, String> courseByLecture = new HashMap<>();
+        if (courseKey != null) {
+            transcriptionClient.listLectures(userId).forEach(lecture ->
+                    courseByLecture.put(lecture.id(), CourseCodes.normalise(lecture.courseCode())));
+        }
+
+        List<QuizAttempt> attempts = attemptRepository.findByUserIdOrderByCompletedAtDesc(userId);
+
+        if (attempts.isEmpty()) {
+            return List.of();
+        }
+
+        Set<UUID> quizIds = attempts.stream().map(QuizAttempt::getQuizId).collect(Collectors.toSet());
+        Map<UUID, Quiz> quizzes = quizRepository.findAllById(quizIds).stream()
+                .collect(Collectors.toMap(Quiz::getId, quiz -> quiz));
+
+        List<TopicAnswerResponse> out = new ArrayList<>();
+
+        for (QuizAttempt attempt : attempts) {
+            Quiz quiz = quizzes.get(attempt.getQuizId());
+            if (quiz == null || attempt.getAnswers() == null) {
+                // The quiz was deleted but its attempt survives. The score still
+                // counts; the questions are simply no longer recoverable.
+                continue;
+            }
+
+            Map<String, QuizQuestion> byId = quiz.getQuestions().stream()
+                    .collect(Collectors.toMap(QuizQuestion::id, question -> question, (a, b) -> a));
+
+            for (GradedAnswer answer : attempt.getAnswers()) {
+                if (!wanted.equals(normaliseTag(answer.topicTag()))) {
+                    continue;
+                }
+
+                if (courseKey != null) {
+                    // The answer's own lecture first; the attempt's course code
+                    // only as a fallback for answers written before questions
+                    // carried a lecture id.
+                    String answerCourse = answer.lectureId() != null
+                            ? courseByLecture.get(answer.lectureId())
+                            : CourseCodes.normalise(attempt.getCourseCode());
+
+                    if (!courseKey.equals(answerCourse)) {
+                        continue;
+                    }
+                }
+
+                QuizQuestion question = byId.get(answer.questionId());
+                if (question == null) {
+                    continue;
+                }
+
+                out.add(new TopicAnswerResponse(
+                        answer.questionId(),
+                        question.prompt(),
+                        question.options(),
+                        answer.selectedIndex(),
+                        answer.correctIndex(),
+                        answer.correct(),
+                        // The attempt's explanation is the one the student was
+                        // shown; the quiz may have been regenerated since.
+                        answer.explanation() != null ? answer.explanation() : question.explanation(),
+                        answer.lectureId(),
+                        quiz.getTitle(),
+                        attempt.getCompletedAt()));
+            }
+        }
+
+        return out;
     }
 
     private static String normaliseTag(String tag) {
