@@ -10,5 +10,8 @@ import java.util.UUID;
 @Repository
 public interface ExamSummaryRepository extends JpaRepository<ExamSummary, UUID> {
 
+    /** Erases this student's rows when their account is deleted. */
+    long deleteByUserId(UUID userId);
+
     Optional<ExamSummary> findByUserIdAndLectureId(UUID userId, UUID lectureId);
 }

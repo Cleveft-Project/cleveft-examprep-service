@@ -11,6 +11,9 @@ import java.util.UUID;
 @Repository
 public interface TopicAnalyticsRepository extends JpaRepository<TopicAnalytics, UUID> {
 
+    /** Erases this student's rows when their account is deleted. */
+    long deleteByUserId(UUID userId);
+
     List<TopicAnalytics> findByUserId(UUID userId);
 
     /**

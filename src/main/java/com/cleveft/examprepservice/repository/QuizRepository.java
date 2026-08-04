@@ -11,6 +11,9 @@ import java.util.UUID;
 @Repository
 public interface QuizRepository extends JpaRepository<Quiz, UUID> {
 
+    /** Erases this student's rows when their account is deleted. */
+    long deleteByUserId(UUID userId);
+
     List<Quiz> findByUserIdOrderByCreatedAtDesc(UUID userId);
 
     List<Quiz> findByUserIdAndLectureIdOrderByCreatedAtDesc(UUID userId, UUID lectureId);
