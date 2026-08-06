@@ -74,8 +74,18 @@ flowchart LR
 | Method | Path | Description |
 | :--- | :--- | :--- |
 | `GET` | `/readiness` | Readiness across every course |
+| `GET` | `/readiness/topics/{topic}/answers` | Every answer you have given on one topic |
 | `GET` | `/readiness/lectures/{lectureId}` | Readiness for a single lecture |
 | `GET` | `/summaries/{lectureId}` | Exam-focused summary of a lecture |
+
+### 🔧 Internal — service-to-service only
+
+Outside `/api/v1/examprep`, and deliberately not routed by the gateway.
+
+| Method | Path | Description |
+| :--- | :--- | :--- |
+| `GET` | `/internal/activity/quizzes` | Per-user quiz counts, for the circle board |
+| `DELETE` | `/internal/users/{userId}` | Erase quizzes, questions and attempts on account deletion |
 
 ---
 
